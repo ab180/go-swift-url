@@ -1,3 +1,6 @@
 {
-    "image": "ghcr.io/swiftwasm/carton:main"
+    "image": "ghcr.io/swiftwasm/carton:main",
+    "features": {
+        "ghcr.io/devcontainers/features/go:1": {}
+    }
 }
