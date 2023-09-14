@@ -61,3 +61,9 @@ print(editor.url)
     - `-Xlinker --export={FUNCTION_NAME} \`
 3. Modify `checker.go`
 4. Commit and push `checker.swift`, `checker.wasm`, `checker.go`
+
+### Requirement
+
+- <https://github.com/swiftwasm/swift>
+
+> Requirement is needed for development not for usage
