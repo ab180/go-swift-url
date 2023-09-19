@@ -1,4 +1,4 @@
-module github.com/ab180/go-swift-url/checker
+module github.com/ab180/go-swift-url
 
 go 1.21.1
 

@@ -5,7 +5,7 @@ ROOT_DIRECTORY="$DIRECTORY/.."
 
 swiftc \
     -target wasm32-unknown-wasi \
-    "$ROOT_DIRECTORY/checker.swift" -o "$ROOT_DIRECTORY/checker.wasm" \
+    "$ROOT_DIRECTORY/checker/checker.swift" -o "$ROOT_DIRECTORY/checker/checker.wasm" \
     -Xlinker --export=is_valid \
     -Xlinker --export=is_can_be_modified \
     -Xlinker --export=allocate \
