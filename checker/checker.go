@@ -1,9 +1,5 @@
 package checker
 
-/*
-#include <stdlib.h>
-*/
-import "C"
 import (
 	_ "embed"
 
