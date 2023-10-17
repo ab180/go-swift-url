@@ -3,91 +3,122 @@ package checker
 import (
 	_ "embed"
 
-	"context"
 	"errors"
 
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
-	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
+	"github.com/bytecodealliance/wasmtime-go/v13"
 )
 
 //go:embed checker.wasm
 var checkerWASM []byte
 
+var errorExportNotFound = errors.New("expected export is not found from WebAssembly runtime")
 var errorUnexpectedResults = errors.New("unexpected results are received from WebAssembly runtime")
-var errorOutOfMemory = errors.New("failed on write data to memory of WebAssembly runtime")
 
 type Checker interface {
-	Close()
 	IsValid(url string) (bool, error)
 	IsCanBeModified(url string) (bool, error)
 }
 
 type checker struct {
-	context context.Context
-	runtime wazero.Runtime
-	module  api.Module
+	instance                *wasmtime.Instance
+	module                  *wasmtime.Module
+	store                   *wasmtime.Store
+	memory                  *wasmtime.Memory
+	functionIsValid         *wasmtime.Func
+	functionIsCanBeModified *wasmtime.Func
+	functionAllocate        *wasmtime.Func
+	functionDeallocate      *wasmtime.Func
 }
 
 // Creates checker instance and initialize WebAssembly runtime
 func New() (Checker, error) {
-	context := context.Background()
-	runtime := wazero.NewRuntime(context)
+	store := wasmtime.NewStore(wasmtime.NewEngine())
+	store.SetWasi(wasmtime.NewWasiConfig())
 
-	_, error := wasi_snapshot_preview1.Instantiate(context, runtime)
+	module, error := wasmtime.NewModule(store.Engine, checkerWASM)
 	if error != nil {
-		runtime.Close(context)
 		return nil, error
 	}
 
-	module, error := runtime.Instantiate(context, checkerWASM)
+	linker := wasmtime.NewLinker(store.Engine)
+	error = linker.DefineWasi()
 	if error != nil {
-		runtime.Close(context)
 		return nil, error
 	}
 
-	_, error = module.ExportedFunction("_initialize").Call(context)
+	instance, error := linker.Instantiate(store, module)
 	if error != nil {
-		module.Close(context)
-		runtime.Close(context)
 		return nil, error
+	}
+
+	initialize := instance.GetFunc(store, "_initialize")
+	if initialize == nil {
+		return nil, errorExportNotFound
+	}
+
+	_, error = initialize.Call(store)
+	if error != nil {
+		return nil, error
+	}
+
+	memory := instance.GetExport(store, "memory").Memory()
+	if memory == nil {
+		return nil, errorExportNotFound
+	}
+
+	functionIsValid := instance.GetFunc(store, "is_valid")
+	if functionIsValid == nil {
+		return nil, errorExportNotFound
+	}
+
+	functionIsCanBeModified := instance.GetFunc(store, "is_can_be_modified")
+	if functionIsCanBeModified == nil {
+		return nil, errorExportNotFound
+	}
+
+	functionAllocate := instance.GetFunc(store, "allocate")
+	if functionAllocate == nil {
+		return nil, errorExportNotFound
+	}
+
+	functionDeallocate := instance.GetFunc(store, "deallocate")
+	if functionDeallocate == nil {
+		return nil, errorExportNotFound
 	}
 
 	checker := checker{
-		context,
-		runtime,
+		instance,
 		module,
+		store,
+		memory,
+		functionIsValid,
+		functionIsCanBeModified,
+		functionAllocate,
+		functionDeallocate,
 	}
 
 	return &checker, nil
 }
 
-// Close WebAssembly runtime
-func (checker *checker) Close() {
-	checker.module.Close(checker.context)
-	checker.runtime.Close(checker.context)
-}
-
 // Checks Swift's `URL` can be initialized with `url`
 func (checker *checker) IsValid(url string) (bool, error) {
-	bytes := []byte(url)
-	length := len(bytes)
+	bytes := append([]byte(url), 0)
+	length := int32(len(bytes))
 
-	pointer, error := checker.allocate(uint64(length))
+	pointer, error := checker.allocate(length)
 	if error != nil {
 		return false, error
 	}
 
-	isWritten := checker.module.ExportedMemory("memory").Write(uint32(pointer), bytes)
-	if !isWritten {
-		return false, errorOutOfMemory
-	}
+	copy(checker.memory.UnsafeData(checker.store)[pointer:], bytes)
 
-	results, error := checker.module.ExportedFunction("is_valid").Call(checker.context, pointer)
+	result, error := checker.functionIsValid.Call(checker.store, pointer)
 	if error != nil {
 		return false, error
 	}
-	if len(results) == 0 {
+
+	isValid, isSuccess := result.(int32)
+	if !isSuccess {
 		return false, errorUnexpectedResults
 	}
 
@@ -96,31 +127,30 @@ func (checker *checker) IsValid(url string) (bool, error) {
 		return false, error
 	}
 
-	return results[0] != 0, nil
+	return isValid != 0, nil
 }
 
 // Checks `url` can be modified by Swift's `URLComponents.queryItems`
 //
 // When Swift's `URLComponents` can not be initialized with `url`, then return false
 func (checker *checker) IsCanBeModified(url string) (bool, error) {
-	bytes := []byte(url)
-	length := len(bytes)
+	bytes := append([]byte(url), 0)
+	length := int32(len(bytes))
 
-	pointer, error := checker.allocate(uint64(length))
+	pointer, error := checker.allocate(length)
 	if error != nil {
 		return false, error
 	}
 
-	isWritten := checker.module.ExportedMemory("memory").Write(uint32(pointer), bytes)
-	if !isWritten {
-		return false, errorOutOfMemory
-	}
+	copy(checker.memory.UnsafeData(checker.store)[pointer:], bytes)
 
-	results, error := checker.module.ExportedFunction("is_can_be_modified").Call(checker.context, pointer)
+	result, error := checker.functionIsCanBeModified.Call(checker.store, pointer)
 	if error != nil {
 		return false, error
 	}
-	if len(results) == 0 {
+
+	isCanBeModified, isSuccess := result.(int32)
+	if !isSuccess {
 		return false, errorUnexpectedResults
 	}
 
@@ -129,25 +159,27 @@ func (checker *checker) IsCanBeModified(url string) (bool, error) {
 		return false, error
 	}
 
-	return results[0] != 0, nil
+	return isCanBeModified != 0, nil
 }
 
 // Allocates `length` bytes from WebAssembly runtime and return address
-func (checker *checker) allocate(length uint64) (uint64, error) {
-	results, error := checker.module.ExportedFunction("allocate").Call(checker.context, length)
+func (checker *checker) allocate(length int32) (int32, error) {
+	result, error := checker.functionAllocate.Call(checker.store, length)
 	if error != nil {
 		return 0, error
 	}
-	if len(results) == 0 {
+
+	pointer, isSuccess := result.(int32)
+	if !isSuccess {
 		return 0, errorUnexpectedResults
 	}
 
-	return results[0], nil
+	return pointer, nil
 }
 
 // Deallocates `pointer` from WebAssembly runtime
-func (checker *checker) deallocate(pointer uint64) error {
-	_, error := checker.module.ExportedFunction("deallocate").Call(checker.context, pointer)
+func (checker *checker) deallocate(pointer int32) error {
+	_, error := checker.functionDeallocate.Call(checker.store, pointer)
 	if error != nil {
 		return error
 	}
