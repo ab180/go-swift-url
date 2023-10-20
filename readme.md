@@ -17,6 +17,7 @@ checker, error := checker.New()
 if error != nil {
 	test.Error(error)
 }
+defer checker.Close()
 
 // true
 isValid, _ := checker.IsValid("https://example.example")

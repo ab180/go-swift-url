@@ -1,8 +1,12 @@
 module github.com/ab180/go-swift-url
 
-go 1.16
+go 1.21.3
+
+require github.com/tetratelabs/wazero v1.5.0
 
 require (
-	github.com/bytecodealliance/wasmtime-go/v13 v13.0.0
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/testify v1.8.4
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
