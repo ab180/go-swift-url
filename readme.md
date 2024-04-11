@@ -1,6 +1,20 @@
 # go-swift-url
 
-Using Swift URL from Go over WebAssembly
+Using Swift URL from Go over WebAssembly.
+
+## Notice
+
+WebAssembly module works differently with `>= iOS 17`.
+
+WebAssembly module is built with Swift 5.8. And it's `Core Foundation` of `Foundation` is from `apple/swift-corelibs-foundation@swift-5.8-RELEASE` (It has iOS 15's implementation). And since iOS 17, iOS's implementation checks url validity less strictly and normalizes url automatically.
+
+```
+// iOS 15, 16: nil
+// iOS 17: Optional(https://airbridge.io/?%7B%7D)
+URL(string: "https://airbridge.io/?{}")
+```
+
+> `Foundation`'s URL, NSURL class wraps `Core Foundation`'s CFURL class.
 
 ## Install
 
@@ -31,13 +45,13 @@ isCanBeModified, _ = checker.IsCanBeModified("https://example.example/?url=examp
 
 ### IsValid
 
-Checks Swift's `URL` can be initialized with `url`
+Checks Swift's `URL` can be initialized with `url`.
 
 ### IsCanBeModified
 
-Checks `url` can be modified by Swift's `URLComponents.queryItems`
+Checks `url` can be modified by Swift's `URLComponents.queryItems`.
 
-When Swift's `URLComponents` can not be initialized with `url`, then return false
+When Swift's `URLComponents` can not be initialized with `url`, then return false.
 
 #### Example
 
@@ -55,15 +69,15 @@ print(editor.url)
 
 ## Develop
 
-1. Modify `checker.swift`
-2. Run `./script/build.sh`
-    - If you add more functions, then you must add below line to `script/build.sh`
+1. Modify `checker.swift`.
+2. Run `./script/build.sh`.
+    - If you add more functions, then you must add below line to `script/build.sh`.
     - `-Xlinker --export={FUNCTION_NAME} \`
-3. Modify `checker.go`
-4. Commit and push `checker.swift`, `checker.wasm`, `checker.go`
+3. Modify `checker.go`.
+4. Commit and push `checker.swift`, `checker.wasm`, `checker.go`.
 
 ### Requirement
 
 - <https://github.com/swiftwasm/swift>
 
-> Requirement is needed for development not for usage
+> Requirement is needed for development not for usage.
